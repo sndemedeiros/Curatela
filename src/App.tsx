@@ -927,6 +927,18 @@ O(A) Curador(a) abaixo assinado(a) declara, sob as penas da lei, que as informa�
                     </p>
                   </div>
                 </div>
+
+                <div className="bg-amber-50/50 rounded-2xl p-4 flex items-start gap-4 border border-amber-100">
+                  <Settings className="w-6 h-6 text-amber-600 shrink-0 mt-1" />
+                  <div>
+                    <h4 className="font-bold text-amber-900 text-sm">Privacidade e Transparência</h4>
+                    <p className="text-amber-800/80 text-xs leading-relaxed">
+                      Este é um projeto independente. 
+                      A administração do sistema tem acesso técnico aos dados armazenados no banco de dados para fins de manutenção e suporte. 
+                      Seus dados são protegidos e não são compartilhados com terceiros.
+                    </p>
+                  </div>
+                </div>
               </div>
 
               {/* Dados da Prestação de Contas */}
@@ -1118,6 +1130,15 @@ O(A) Curador(a) abaixo assinado(a) declara, sob as penas da lei, que as informa�
           )}
         </AnimatePresence>
       </main>
+
+      {/* Footer */}
+      <footer className="bg-white border-t border-slate-200 py-8 mt-12">
+        <div className="max-w-7xl mx-auto px-4 text-center">
+          <p className="text-xs text-slate-400 font-medium">
+            © {new Date().getFullYear()} CuratelaAI • Projeto Independente
+          </p>
+        </div>
+      </footer>
 
       {/* Processing Overlay */}
       <AnimatePresence>
