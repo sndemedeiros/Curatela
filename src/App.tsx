@@ -354,7 +354,7 @@ function AppContent() {
     setState(prev => ({ ...prev, isProcessing: true }));
     
     // Create a new instance right before making an API call to ensure it uses the latest key
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+    const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY! });
     
     try {
       const newItems: AccountItem[] = [];
