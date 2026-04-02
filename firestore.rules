@@ -1,0 +1,57 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId (Firebase Auth UID)
+    // Fields:
+    //   - curador: string (required)
+    //   - curatelado: string (required)
+    //   - mesInicio: string
+    //   - anoInicio: string
+    //   - contasBancarias: list of objects
+    //   - saldoInicialCaixa: string
+    //   - items: list of objects
+    //   - updatedAt: string (ISO 8601)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidUser(data) {
+      return data.curador is string && data.curador.size() < 100 &&
+             data.curatelado is string && data.curatelado.size() < 100 &&
+             (!('mesInicio' in data) || (data.mesInicio is string && data.mesInicio.size() < 20)) &&
+             (!('anoInicio' in data) || (data.anoInicio is string && data.anoInicio.size() < 10)) &&
+             (!('contasBancarias' in data) || (data.contasBancarias is list && data.contasBancarias.size() < 50)) &&
+             (!('saldoInicialCaixa' in data) || (data.saldoInicialCaixa is string && data.saldoInicialCaixa.size() < 50)) &&
+             (!('items' in data) || (data.items is list && data.items.size() < 1000)) &&
+             (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() < 50));
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data);
+      allow delete: if isOwner(userId);
+    }
+
+    // Deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "Assistente de Curatela AI",
+  "description": "Automatização de prestação de contas de curatela com extração inteligente de dados de documentos.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

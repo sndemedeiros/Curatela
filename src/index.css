@@ -1,0 +1,123 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900 antialiased;
+  }
+}
+
+@layer components {
+  .prose {
+    @apply max-w-none;
+  }
+  
+  .prose h1 {
+    @apply text-3xl font-bold tracking-tight text-slate-900 mb-8;
+  }
+  
+  .prose h2 {
+    @apply text-xl font-bold text-slate-800 mt-12 mb-4 border-b border-slate-100 pb-2;
+  }
+  
+  .prose table {
+    @apply w-full border-collapse my-8;
+  }
+  
+  .prose th {
+    @apply bg-slate-50 px-4 py-2 text-left text-sm font-bold text-slate-600 border border-slate-200;
+  }
+  
+  .prose td {
+    @apply px-4 py-2 text-sm text-slate-700 border border-slate-200;
+  }
+
+  /* Estilos específicos para o Relatório Jurídico */
+  .legal-report, .legal-report * {
+    color: #000000 !important;
+    background-color: #ffffff !important;
+    border-color: #000000 !important;
+    text-decoration-color: #000000 !important;
+    outline-color: #000000 !important;
+  }
+
+  .legal-report {
+    font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+    line-height: 1.6;
+    padding: 3rem !important;
+  }
+
+  .legal-report h1, .legal-report h2, .legal-report h3 {
+    font-weight: 700;
+    border: none !important;
+    margin-bottom: 1rem;
+    margin-top: 2rem;
+    text-align: left;
+  }
+
+  .legal-report table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 2px solid #000000 !important;
+    margin-top: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .legal-report th {
+    background-color: #f1f5f9 !important; /* slate-100 fallback */
+    border: 1px solid #000000 !important;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    text-align: center;
+  }
+
+  .legal-report td {
+    border: 1px solid #000000 !important;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+  }
+
+  .legal-report hr {
+    border: none !important;
+    border-top: 1px solid #cbd5e1 !important; /* slate-300 fallback */
+    margin-top: 2rem;
+    margin-bottom: 2rem;
+    height: 0;
+  }
+
+  .legal-report p {
+    font-size: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  @media print {
+    body * {
+      visibility: hidden;
+    }
+    .legal-report, .legal-report * {
+      visibility: visible;
+    }
+    .legal-report {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      padding: 0 !important;
+      margin: 0 !important;
+      box-shadow: none !important;
+      border: none !important;
+    }
+    header, nav, button, .no-print {
+      display: none !important;
+    }
+  }
+}

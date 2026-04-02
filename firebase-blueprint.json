@@ -1,0 +1,50 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Stores user-specific data for the curatorship report.",
+      "type": "object",
+      "properties": {
+        "curador": { "type": "string" },
+        "curatelado": { "type": "string" },
+        "mesInicio": { "type": "string" },
+        "anoInicio": { "type": "string" },
+        "contasBancarias": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "data": { "type": "string" },
+              "valor": { "type": "number" },
+              "descricao": { "type": "string" }
+            }
+          }
+        },
+        "saldoInicialCaixa": { "type": "string" },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "data": { "type": "string" },
+              "valor": { "type": "number" },
+              "descricao": { "type": "string" },
+              "tipo": { "type": "string", "enum": ["receita", "despesa"] },
+              "categoria": { "type": "string" }
+            }
+          }
+        },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["curador", "curatelado"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User-specific report data."
+    }
+  }
+}
