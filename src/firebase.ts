@@ -2,15 +2,11 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { getFirestore, doc, getDoc, setDoc, onSnapshot, getDocFromServer } from 'firebase/firestore';
 
-// Import the Firebase configuration
+// Firebase configuration
 let firebaseConfig: any;
 
-try {
-  // Try to import from the JSON file (local development)
-  // @ts-ignore
-  firebaseConfig = await import('../firebase-applet-config.json').then(m => m.default);
-} catch (e) {
-  // Fallback to environment variables (Vercel/Production)
+// Check if we have environment variables (Production/Vercel)
+if (import.meta.env.VITE_FIREBASE_PROJECT_ID) {
   firebaseConfig = {
     projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
     appId: import.meta.env.VITE_FIREBASE_APP_ID,
@@ -21,6 +17,17 @@ try {
     messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
     measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || ""
   };
+} else {
+  // Fallback to local JSON file (Local Development/AI Studio)
+  try {
+    // @ts-ignore
+    const config = await import('../firebase-applet-config.json');
+    firebaseConfig = config.default;
+  } catch (e) {
+    console.error("Firebase configuration not found. Please check your environment variables or firebase-applet-config.json");
+    // Provide a dummy config to prevent crash during build if everything is missing
+    firebaseConfig = { projectId: "placeholder" };
+  }
 }
 
 // Initialize Firebase SDK
