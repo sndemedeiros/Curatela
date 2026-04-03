@@ -9,15 +9,19 @@
         "curatelado": { "type": "string" },
         "mesInicio": { "type": "string" },
         "anoInicio": { "type": "string" },
+        "mesFim": { "type": "string" },
+        "anoFim": { "type": "string" },
         "contasBancarias": {
           "type": "array",
           "items": {
             "type": "object",
             "properties": {
               "id": { "type": "string" },
-              "data": { "type": "string" },
-              "valor": { "type": "number" },
-              "descricao": { "type": "string" }
+              "banco": { "type": "string" },
+              "tipo": { "type": "string" },
+              "agencia": { "type": "string" },
+              "conta": { "type": "string" },
+              "saldoInicial": { "type": "string" }
             }
           }
         },
@@ -32,9 +36,16 @@
               "valor": { "type": "number" },
               "descricao": { "type": "string" },
               "tipo": { "type": "string", "enum": ["receita", "despesa"] },
-              "categoria": { "type": "string" }
+              "categoria": { "type": "string" },
+              "estabelecimento": { "type": "string" },
+              "origem": { "type": "string" },
+              "documentoId": { "type": "string" }
             }
           }
+        },
+        "inconsistencias": {
+          "type": "array",
+          "items": { "type": "string" }
         },
         "updatedAt": { "type": "string", "format": "date-time" }
       },

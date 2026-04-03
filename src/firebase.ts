@@ -20,9 +20,13 @@ if (import.meta.env.VITE_FIREBASE_PROJECT_ID) {
 } else {
   // Fallback to local JSON file (Local Development/AI Studio)
   try {
-    // @ts-ignore
-    const config = await import('../firebase-applet-config.json');
-    firebaseConfig = config.default;
+    const configs = import.meta.glob('../firebase-applet-config.json', { eager: true });
+    const config = configs['../firebase-applet-config.json'] as any;
+    if (config && config.default) {
+      firebaseConfig = config.default;
+    } else {
+      throw new Error("Config not found");
+    }
   } catch (e) {
     console.error("Firebase configuration not found. Please check your environment variables or firebase-applet-config.json");
     // Provide a dummy config to prevent crash during build if everything is missing

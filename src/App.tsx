@@ -77,10 +77,10 @@ interface BankAccount {
   tipo: string;
   agencia: string;
   conta: string;
-  saldoInicial: string;
 }
 
 interface AppState {
+  numeroProcesso: string;
   curador: string;
   curatelado: string;
   mesInicio: string;
@@ -183,6 +183,7 @@ function AppContent() {
   const [loginError, setLoginError] = useState<string | null>(null);
 
   const [state, setState] = useState<AppState>({
+    numeroProcesso: '',
     curador: '',
     curatelado: '',
     mesInicio: '',
@@ -216,6 +217,7 @@ function AppContent() {
         const data = snapshot.data();
         setState(prev => ({
           ...prev,
+          numeroProcesso: data.numeroProcesso || '',
           curador: data.curador || '',
           curatelado: data.curatelado || '',
           mesInicio: data.mesInicio || '',
@@ -247,6 +249,7 @@ function AppContent() {
       try {
         const userDocRef = doc(db, 'users', user.uid);
         const dataToSave = {
+          numeroProcesso: state.numeroProcesso,
           curador: state.curador,
           curatelado: state.curatelado,
           mesInicio: state.mesInicio,
@@ -271,19 +274,27 @@ function AppContent() {
     return () => clearTimeout(timeoutId);
   }, [state, user, isAuthReady]);
 
-  const handleFirestoreError = (error: any, operationType: string, path: string) => {
+  const handleFirestoreError = (error: any, operationType: 'create' | 'update' | 'delete' | 'list' | 'get' | 'write', path: string | null) => {
     const errInfo = {
       error: error instanceof Error ? error.message : String(error),
       operationType,
       path,
       authInfo: {
         userId: auth.currentUser?.uid,
-        email: auth.currentUser?.email
+        email: auth.currentUser?.email,
+        emailVerified: auth.currentUser?.emailVerified,
+        isAnonymous: auth.currentUser?.isAnonymous,
+        tenantId: auth.currentUser?.tenantId,
+        providerInfo: auth.currentUser?.providerData.map(provider => ({
+          providerId: provider.providerId,
+          displayName: provider.displayName,
+          email: provider.email,
+          photoUrl: provider.photoURL
+        })) || []
       }
     };
-    console.error('Firestore Error:', JSON.stringify(errInfo));
-    // We don't necessarily want to crash the whole app for a save error, 
-    // but we should log it and maybe show a toast (omitted for brevity)
+    console.error('Firestore Error: ', JSON.stringify(errInfo));
+    throw new Error(JSON.stringify(errInfo));
   };
 
   const handleLogin = async () => {
@@ -309,6 +320,7 @@ function AppContent() {
       await signOut(auth);
       // Reset state on logout
       setState({
+        numeroProcesso: '',
         curador: '',
         curatelado: '',
         mesInicio: '',
@@ -330,6 +342,18 @@ function AppContent() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const reportRef = useRef<HTMLDivElement>(null);
 
+  const parseCurrency = (val: string | number): number => {
+    if (typeof val === 'number') return val;
+    if (!val) return 0;
+    // Remove dots (thousands separator) and replace comma with dot (decimal separator)
+    const clean = val.replace(/\./g, '').replace(',', '.');
+    return parseFloat(clean) || 0;
+  };
+
+  const formatCurrency = (val: number): string => {
+    return val.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+  };
+
   const totals = useMemo(() => {
     const receitas = state.items
       .filter(i => i.tipo === 'receita')
@@ -338,9 +362,8 @@ function AppContent() {
       .filter(i => i.tipo === 'despesa')
       .reduce((acc, curr) => acc + curr.valor, 0);
     
-    // Calculate initial total from bank accounts + caixa
-    const initialCaixa = parseFloat(state.saldoInicialCaixa) || 0;
-    const totalSaldoInicial = initialCaixa + state.contasBancarias.reduce((acc, curr) => acc + (parseFloat(curr.saldoInicial) || 0), 0); 
+    // Calculate initial total from caixa (which now represents total initial balance)
+    const totalSaldoInicial = parseCurrency(state.saldoInicialCaixa);
     
     return {
       receitas,
@@ -354,50 +377,79 @@ function AppContent() {
     setState(prev => ({ ...prev, isProcessing: true }));
     
     // Create a new instance right before making an API call to ensure it uses the latest key
-    const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY! });
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
     
     try {
       const newItems: AccountItem[] = [];
       let newSaldoInicial = state.saldoInicialCaixa;
       const newInconsistencias = [...state.inconsistencias];
 
+      const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const base64 = await fileToBase64(file);
         
-        const response = await ai.models.generateContent({
-          model: GEMINI_MODEL,
-          contents: [
-            {
-              parts: [
-                { text: EXTRACTION_PROMPT },
-                { inlineData: { data: base64.split(',')[1], mimeType: file.type } }
-              ]
+        let retryCount = 0;
+        const maxRetries = 3;
+        let success = false;
+
+        while (retryCount < maxRetries && !success) {
+          try {
+            // Add a small delay between requests to avoid rate limits if processing multiple files
+            if (i > 0 || retryCount > 0) {
+              await delay(retryCount > 0 ? 2000 * retryCount : 1000);
             }
-          ],
-          config: {
-            responseMimeType: "application/json",
-          }
-        });
 
-        const resultText = response.text || "{}";
-        const extracted: ExtractedData = JSON.parse(resultText);
-
-        if (extracted.items) {
-          extracted.items.forEach(item => {
-            newItems.push({
-              ...item,
-              id: Math.random().toString(36).substr(2, 9),
-              documentoId: file.name
+            const response = await ai.models.generateContent({
+              model: GEMINI_MODEL,
+              contents: [
+                {
+                  parts: [
+                    { text: EXTRACTION_PROMPT },
+                    { inlineData: { data: base64.split(',')[1], mimeType: file.type } }
+                  ]
+                }
+              ],
+              config: {
+                responseMimeType: "application/json",
+              }
             });
-          });
-        }
 
-        if (extracted.saldo_inicial !== undefined && extracted.saldo_inicial !== 0) {
-          newSaldoInicial = extracted.saldo_inicial.toString();
-        }
-        if (extracted.inconsistencias) {
-          newInconsistencias.push(...extracted.inconsistencias.map(inc => `[${file.name}] ${inc}`));
+            const resultText = response.text || "{}";
+            const extracted: ExtractedData = JSON.parse(resultText);
+
+            if (extracted.items) {
+              extracted.items.forEach(item => {
+                newItems.push({
+                  ...item,
+                  id: Math.random().toString(36).substr(2, 9),
+                  documentoId: file.name
+                });
+              });
+            }
+
+            if (extracted.saldo_inicial !== undefined && extracted.saldo_inicial !== 0) {
+              newSaldoInicial = formatCurrency(extracted.saldo_inicial);
+            }
+            if (extracted.inconsistencias) {
+              newInconsistencias.push(...extracted.inconsistencias.map(inc => `[${file.name}] ${inc}`));
+            }
+            
+            success = true;
+          } catch (err: any) {
+            console.error(`Erro ao processar ${file.name} (tentativa ${retryCount + 1}):`, err);
+            
+            // Check if it's a rate limit error (429)
+            const isRateLimit = err.message?.includes('429') || err.status === 429;
+            
+            if (isRateLimit && retryCount < maxRetries - 1) {
+              retryCount++;
+              continue;
+            }
+            
+            throw new Error(`Erro ao processar ${file.name}: ${err.message || 'Erro desconhecido'}`);
+          }
         }
       }
 
@@ -409,9 +461,9 @@ function AppContent() {
         isProcessing: false
       }));
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erro ao processar documentos:", error);
-      alert("Erro ao processar um ou mais documentos. Verifique o console.");
+      alert(`Erro ao processar documentos: ${error.message || 'Verifique o console para mais detalhes.'}`);
       setState(prev => ({ ...prev, isProcessing: false }));
     }
   };
@@ -433,9 +485,57 @@ function AppContent() {
   };
 
   const generateReport = () => {
-    const receitas = state.items.filter(i => i.tipo === 'receita').sort((a,b) => a.data.localeCompare(b.data));
-    const despesas = state.items.filter(i => i.tipo === 'despesa').sort((a,b) => a.data.localeCompare(b.data));
     const dataAtual = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+    
+    // Group items by month/year
+    const groupedItems: Record<string, { receitas: AccountItem[], despesas: AccountItem[] }> = {};
+    
+    state.items.forEach(item => {
+      const date = new Date(item.data);
+      // Use UTC to avoid timezone shifts for grouping
+      const monthKey = `${date.getUTCFullYear()}-${(date.getUTCMonth() + 1).toString().padStart(2, '0')}`;
+      if (!groupedItems[monthKey]) {
+        groupedItems[monthKey] = { receitas: [], despesas: [] };
+      }
+      if (item.tipo === 'receita') {
+        groupedItems[monthKey].receitas.push(item);
+      } else {
+        groupedItems[monthKey].despesas.push(item);
+      }
+    });
+
+    const sortedMonths = Object.keys(groupedItems).sort();
+
+    const monthlyBreakdown = sortedMonths.map(monthKey => {
+      const [year, month] = monthKey.split('-');
+      const monthName = new Date(parseInt(year), parseInt(month) - 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase();
+      const monthData = groupedItems[monthKey];
+      
+      // Sort items within the month by date
+      monthData.receitas.sort((a, b) => a.data.localeCompare(b.data));
+      monthData.despesas.sort((a, b) => a.data.localeCompare(b.data));
+
+      const monthReceitasTotal = monthData.receitas.reduce((acc, curr) => acc + curr.valor, 0);
+      const monthDespesasTotal = monthData.despesas.reduce((acc, curr) => acc + curr.valor, 0);
+
+      return `
+### MOVIMENTAÇÃO DE ${monthName}
+
+**RECEBIMENTOS (ENTRADAS):**
+| Data | Descrição | Categoria | Valor (R$) |
+| :--- | :--- | :--- | :--- |
+${monthData.receitas.length > 0 ? monthData.receitas.map(item => `| ${new Date(item.data).toLocaleDateString('pt-BR')} | ${item.descricao} | ${item.categoria} | R$ ${item.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} |`).join('\n') : '| --- | --- | --- | R$ 0,00 |'}
+| | | **SUBTOTAL ENTRADAS NO MÊS** | **R$ ${monthReceitasTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}** |
+
+**PAGAMENTOS (SAÍDAS):**
+| Data | Descrição | Categoria | Valor (R$) |
+| :--- | :--- | :--- | :--- |
+${monthData.despesas.length > 0 ? monthData.despesas.map(item => `| ${new Date(item.data).toLocaleDateString('pt-BR')} | ${item.descricao} | ${item.categoria} | R$ ${item.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} |`).join('\n') : '| --- | --- | --- | R$ 0,00 |'}
+| | | **SUBTOTAL SAÍDAS NO MÊS** | **R$ ${monthDespesasTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}** |
+
+---
+`;
+    }).join('\n');
 
     return `
 <div style="text-align: center; margin-bottom: 30px;">
@@ -444,6 +544,7 @@ function AppContent() {
 </div>
 
 **IDENTIFICAÇÃO:**
+- **Nº DO PROCESSO:** ${state.numeroProcesso || '________________________________________________'}
 - **CURADOR(A):** ${state.curador || '________________________________________________'}
 - **CURATELADO(A):** ${state.curatelado || '________________________________________________'}
 - **PERÍODO DE REFERÊNCIA:** ${state.mesInicio || '---'}/${state.anoInicio || '---'} até ${state.mesFim || '---'}/${state.anoFim || '---'}
@@ -451,44 +552,37 @@ function AppContent() {
 ---
 
 ### 1. DEMONSTRATIVO DE SALDO INICIAL
-Este quadro detalha os valores disponíveis no início do período de referência, compreendendo saldo em espécie (caixa) e em contas bancárias.
+Este quadro detalha os valores disponíveis no início do período de referência.
 
 | Descrição da Conta / Origem | Valor (R$) |
 | :--- | :--- |
-| Saldo em Espécie (Caixa) | R$ ${(parseFloat(state.saldoInicialCaixa) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} |
-${state.contasBancarias.map(c => `| ${c.banco} (${c.tipo}) - Ag: ${c.agencia} / Cc: ${c.conta} | R$ ${(parseFloat(c.saldoInicial) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} |`).join('\n')}
+| Saldo Inicial em Caixa / Bancos | R$ ${(parseCurrency(state.saldoInicialCaixa)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} |
 | **TOTAL DO SALDO INICIAL (A)** | **R$ ${totals.saldoInicial.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}** |
 
 ---
 
-### 2. DEMONSTRATIVO DE RECEBIMENTOS (ENTRADAS)
-Relação detalhada de todos os valores recebidos em favor do curatelado no período (aposentadoria, benefícios, rendimentos, etc).
-
-| Nº | Data | Descrição do Recebimento | Categoria | Valor (R$) |
-| :--- | :--- | :--- | :--- | :--- |
-${receitas.map((item, idx) => `| ${(idx + 1).toString().padStart(3, '0')} | ${new Date(item.data).toLocaleDateString('pt-BR')} | ${item.descricao} | ${item.categoria} | R$ ${item.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} |`).join('\n')}
-| | | **TOTAL DE RECEBIMENTOS NO MÊS (B)** | | **R$ ${totals.receitas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}** |
+### 2. RELAÇÃO DE CONTAS BANCÁRIAS
+| Banco | Tipo | Agência | Conta |
+| :--- | :--- | :--- | :--- |
+${state.contasBancarias.length > 0 ? state.contasBancarias.map(c => `| ${c.banco} | ${c.tipo} | ${c.agencia} | ${c.conta} |`).join('\n') : '| --- | --- | --- | --- |'}
 
 ---
 
-### 3. DEMONSTRATIVO DE PAGAMENTOS (SAÍDAS)
-Relação detalhada de todas as despesas e pagamentos efetuados para a manutenção e bem-estar do curatelado.
+### 3. DETALHAMENTO MENSAL DA MOVIMENTAÇÃO
+Abaixo seguem os lançamentos de entradas e saídas organizados cronologicamente por mês.
 
-| Nº | Data | Descrição da Despesa | Categoria | Valor (R$) |
-| :--- | :--- | :--- | :--- | :--- |
-${despesas.map((item, idx) => `| ${(idx + 1).toString().padStart(3, '0')} | ${new Date(item.data).toLocaleDateString('pt-BR')} | ${item.descricao} | ${item.categoria} | R$ ${item.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} |`).join('\n')}
-| | | **TOTAL DE PAGAMENTOS NO MÊS (C)** | | **R$ ${totals.despesas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}** |
+${monthlyBreakdown || '*Nenhum lançamento registrado no período.*'}
 
 ---
 
-### 4. RESUMO FINANCEIRO E SALDO FINAL
-Apuração do saldo remanescente ao final do período de referência.
+### 4. RESUMO FINANCEIRO E SALDO FINAL (CONSOLIDADO)
+Apuração do saldo remanescente ao final do período de referência total.
 
 | Descrição da Operação | Valor (R$) |
 | :--- | :--- |
 | (+) Saldo Inicial Total (A) | R$ ${totals.saldoInicial.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} |
-| (+) Total de Recebimentos (B) | R$ ${totals.receitas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} |
-| (-) Total de Pagamentos (C) | R$ ${totals.despesas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} |
+| (+) Total de Recebimentos no Período (B) | R$ ${totals.receitas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} |
+| (-) Total de Pagamentos no Período (C) | R$ ${totals.despesas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} |
 | **(=) SALDO FINAL EM CAIXA/CONTAS (D)** | **R$ ${totals.saldoFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}** |
 
 ---
@@ -948,6 +1042,15 @@ O(A) Curador(a) abaixo assinado(a) declara, sob as penas da lei, que as informa�
                 </div>
                 <div className="p-6 space-y-2">
                   <div className="grid grid-cols-[250px_1fr] items-center gap-0 border-b border-slate-100 pb-2">
+                    <label className="text-sm font-medium text-black">Número do Processo:</label>
+                    <input 
+                      type="text" 
+                      value={state.numeroProcesso}
+                      onChange={(e) => setState(prev => ({ ...prev, numeroProcesso: e.target.value }))}
+                      className="w-full px-2 py-0.5 bg-[#ffffcc] border border-black text-sm outline-none"
+                    />
+                  </div>
+                  <div className="grid grid-cols-[250px_1fr] items-center gap-0 border-b border-slate-100 pb-2">
                     <label className="text-sm font-medium text-black">Curador:</label>
                     <input 
                       type="text" 
@@ -1001,15 +1104,6 @@ O(A) Curador(a) abaixo assinado(a) declara, sob as penas da lei, que as informa�
                       className="w-[200px] px-2 py-0.5 bg-[#ffffcc] border border-black text-sm outline-none"
                     />
                   </div>
-                  <div className="grid grid-cols-[250px_1fr] items-center gap-0">
-                    <label className="text-sm font-medium text-black">Saldo Inicial em Caixa (R$):</label>
-                    <input 
-                      type="number" 
-                      value={state.saldoInicialCaixa}
-                      onChange={(e) => setState(prev => ({ ...prev, saldoInicialCaixa: e.target.value }))}
-                      className="w-[200px] px-2 py-0.5 bg-[#ffffcc] border border-black text-sm outline-none"
-                    />
-                  </div>
                 </div>
               </div>
 
@@ -1019,7 +1113,26 @@ O(A) Curador(a) abaixo assinado(a) declara, sob as penas da lei, que as informa�
                   <h3 className="text-sm font-bold text-black uppercase tracking-wide">Informações Bancárias</h3>
                 </div>
                 <div className="p-6 space-y-4">
-                  <p className="text-sm text-black">
+                  <div className="grid grid-cols-[250px_1fr] items-center gap-0 border-b border-slate-100 pb-4">
+                    <div className="flex flex-col">
+                      <label className="text-sm font-bold text-black uppercase">Saldo Inicial em Caixa:</label>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-sm font-bold text-black">R$</span>
+                      <input 
+                        type="text" 
+                        value={state.saldoInicialCaixa}
+                        onChange={(e) => setState(prev => ({ ...prev, saldoInicialCaixa: e.target.value }))}
+                        onBlur={(e) => {
+                          const num = parseCurrency(e.target.value);
+                          setState(prev => ({ ...prev, saldoInicialCaixa: formatCurrency(num) }));
+                        }}
+                        className="w-[200px] px-2 py-0.5 bg-[#ffffcc] border border-black text-sm outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <p className="text-sm text-black pt-2">
                     Relacione as contas bancárias (ignore em caso de inexistência de conta bancária):
                   </p>
                   
@@ -1031,7 +1144,6 @@ O(A) Curador(a) abaixo assinado(a) declara, sob as penas da lei, que as informa�
                           <th className="border border-black px-2 py-1 text-left text-xs font-bold text-black">Tipo de Conta</th>
                           <th className="border border-black px-2 py-1 text-left text-xs font-bold text-black">Agência</th>
                           <th className="border border-black px-2 py-1 text-left text-xs font-bold text-black">Número da Conta</th>
-                          <th className="border border-black px-2 py-1 text-left text-xs font-bold text-black">Saldo Inicial</th>
                           <th className="border border-black px-2 py-1 text-center text-xs font-bold text-black">Ações</th>
                         </tr>
                       </thead>
@@ -1086,18 +1198,6 @@ O(A) Curador(a) abaixo assinado(a) declara, sob as penas da lei, que as informa�
                                 className="w-full px-2 py-1 bg-[#ffffcc] text-sm outline-none focus:bg-white"
                               />
                             </td>
-                            <td className="border border-black p-0">
-                              <input 
-                                type="number" 
-                                value={conta.saldoInicial}
-                                onChange={(e) => {
-                                  const newContas = [...state.contasBancarias];
-                                  newContas[idx].saldoInicial = e.target.value;
-                                  setState(prev => ({ ...prev, contasBancarias: newContas }));
-                                }}
-                                className="w-full px-2 py-1 bg-[#ffffcc] text-sm outline-none focus:bg-white"
-                              />
-                            </td>
                             <td className="border border-black px-2 py-1 text-center">
                               <button 
                                 onClick={() => setState(prev => ({ 
@@ -1118,7 +1218,7 @@ O(A) Curador(a) abaixo assinado(a) declara, sob as penas da lei, que as informa�
                   <button 
                     onClick={() => setState(prev => ({ 
                       ...prev, 
-                      contasBancarias: [...prev.contasBancarias, { id: Math.random().toString(), banco: '', tipo: '', agencia: '', conta: '', saldoInicial: '' }] 
+                      contasBancarias: [...prev.contasBancarias, { id: Math.random().toString(), banco: '', tipo: '', agencia: '', conta: '' }] 
                     }))}
                     className="text-indigo-600 hover:text-indigo-700 text-sm font-medium flex items-center gap-1 mt-2"
                   >
