@@ -374,10 +374,18 @@ function AppContent() {
   }, [state.items, state.saldoInicialCaixa, state.contasBancarias]);
 
   const processFiles = async (files: FileList) => {
+    const apiKey = process.env.GEMINI_API_KEY || import.meta.env.VITE_GEMINI_API_KEY;
+    
+    if (!apiKey) {
+      setState(prev => ({ ...prev, isProcessing: false }));
+      alert("ERRO DE CONFIGURAÇÃO: A chave da API (GEMINI_API_KEY) não foi encontrada. Se você estiver na Vercel, adicione VITE_GEMINI_API_KEY nas variáveis de ambiente e faça um redeploy.");
+      return;
+    }
+
     setState(prev => ({ ...prev, isProcessing: true }));
     
     // Create a new instance right before making an API call to ensure it uses the latest key
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+    const ai = new GoogleGenAI({ apiKey });
     
     try {
       const newItems: AccountItem[] = [];
